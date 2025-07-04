@@ -1,0 +1,87 @@
+-- Fichier: definitions/idf_silver_gold_ml.sqlx
+-- Pivot des résultats électoraux par orientation politique avec données géographiques
+-- Orientations consolidées : gauche (écolo+gauche+extrême gauche), droite (droite+extrême droite), centre
+
+config {
+  type: "table",
+  database: "mspr-data-ia",
+  schema: "idf_gold_aggregates", 
+  name: "idf_ml", 
+  description: "Résultats électoraux avec orientations politiques consolidées et données contextuelles",
+  
+}
+
+-- Requête principale avec jointure vers dim_commune
+SELECT
+  e.code_insee,
+  e.libelle_commune,
+  -- Ajout du code postal depuis dim_commune
+  dc.Code_postal,
+  
+  ROUND(e.pct_abstention, 2) AS pct_abstention,
+  
+  -- Pivot des orientations politiques consolidées avec COALESCE pour gérer les NULL
+  ROUND(COALESCE(MAX(CASE WHEN e.orientation = 'centre' THEN e.pct_exp_vot END), 0), 2) AS centre_pct,
+  
+  -- Consolidation DROITE : droite + extrême droite
+  ROUND(COALESCE(
+    MAX(CASE WHEN e.orientation = 'droite' THEN e.pct_exp_vot END) + 
+    MAX(CASE WHEN e.orientation = 'extreme_droite' THEN e.pct_exp_vot END), 0), 2) AS droite_pct,
+  
+  -- Consolidation GAUCHE : écologiste + gauche + extrême gauche
+  ROUND(COALESCE(
+    MAX(CASE WHEN e.orientation = 'ecologiste' THEN e.pct_exp_vot END) + 
+    MAX(CASE WHEN e.orientation = 'gauche' THEN e.pct_exp_vot END) + 
+    MAX(CASE WHEN e.orientation = 'extreme_gauche' THEN e.pct_exp_vot END), 0), 2) AS gauche_pct,
+  
+  -- Colonnes socio-économiques (avec gestion des NULL)
+  COALESCE(MAX(c.entreprises_actives_2022), 0) AS entreprises_actives_2022,
+  ROUND(COALESCE(MAX(c.taux_proprietaires_pop), 0), 2) AS taux_proprietaires_pop,
+  ROUND(COALESCE(MAX(c.taux_locataires_pop), 0), 2) AS taux_locataires_pop,
+  ROUND(COALESCE(MAX(c.taux_55_plus_pop), 0), 2) AS taux_55_plus_pop,
+  ROUND(COALESCE(MAX(c.taux_18_29_pop), 0), 2) AS taux_18_29_pop,
+  ROUND(COALESCE(MAX(c.taux_etudiants_pop), 0), 2) AS taux_etudiants_pop,
+  ROUND(COALESCE(MAX(c.taux_hlm_pop), 0), 2) AS taux_hlm_pop,
+  ROUND(COALESCE(MAX(c.taux_actifs_velo), 0), 2) AS taux_actifs_velo,
+  ROUND(COALESCE(MAX(c.taux_actifs_voiture), 0), 2) AS taux_actifs_voiture,
+  ROUND(COALESCE(MAX(c.taux_actifs_transports_commun), 0), 2) AS taux_actifs_transports_commun,
+  ROUND(COALESCE(MAX(c.taux_chomage), 0), 2) AS taux_chomage,
+  ROUND(COALESCE(MAX(c.taux_agri_emploi), 0), 2) AS taux_agri_emploi,
+  ROUND(COALESCE(MAX(c.taux_secondaire_emploi), 0), 2) AS taux_secondaire_emploi,
+  ROUND(COALESCE(MAX(c.taux_tertiaire_emploi), 0), 2) AS taux_tertiaire_emploi,
+  ROUND(COALESCE(MAX(c.taux_sans_diplome_pop15ns), 0), 2) AS taux_sans_diplome_pop15ns,
+  ROUND(COALESCE(MAX(c.taux_brevet_pop15ns), 0), 2) AS taux_brevet_pop15ns,
+  ROUND(COALESCE(MAX(c.taux_cap_pop15ns), 0), 2) AS taux_cap_pop15ns,
+  ROUND(COALESCE(MAX(c.taux_bac_pop15ns), 0), 2) AS taux_bac_pop15ns,
+  ROUND(COALESCE(MAX(c.taux_bts_pop15ns), 0), 2) AS taux_bts_pop15ns,
+  ROUND(COALESCE(MAX(c.taux_licence_pop15ns), 0), 2) AS taux_licence_pop15ns,
+  ROUND(COALESCE(MAX(c.taux_master_doctorat_pop15ns), 0), 2) AS taux_master_doctorat_pop15ns,
+  COALESCE(MAX(c.entreprises_variation_creations_2017_2022), 0) AS entreprises_variation_creations_2017_2022,
+  ROUND(COALESCE(MAX(c.densite_population), 0), 2) AS densite_population,
+  COALESCE(MAX(c.mediane_niveau_vie), 0) AS mediane_niveau_vie,
+  
+  -- Colonnes sécurité
+  ROUND(COALESCE(MAX(s.taux_securite_actuel), 0), 2) AS taux_securite_actuel,
+  ROUND(COALESCE(MAX(s.taux_securite_variation), 0), 2) AS taux_securite_variation
+
+FROM `mspr-data-ia.idf_silver_cleaned.faits_donnees_electorales` e
+
+-- Jointure principale avec dim_commune (AJOUT)
+LEFT JOIN `mspr-data-ia.idf_silver_cleaned.dim_commune` dc
+  ON e.code_insee = dc.Code_commune_INSEE
+
+-- Jointures existantes
+LEFT JOIN `mspr-data-ia.idf_silver_cleaned.dim_contexte_socio_economique` c
+  ON e.code_insee = c.code_geo
+  
+LEFT JOIN `mspr-data-ia.idf_silver_cleaned.dim_securite` s
+  ON e.code_insee = s.CODGEO
+
+GROUP BY 
+  e.code_insee,
+  e.libelle_commune,
+  e.pct_abstention,
+  -- Ajout du code postal dans GROUP BY
+  dc.Code_postal
+
+ORDER BY e.code_insee
